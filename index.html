@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Dynamic Grid Tool</title>
+    <title>AI Dynamic Grid Tool (Google Sheets Cloud)</title>
     <style>
         :root {
             --bg-dark: #1e1e1e;
@@ -14,8 +14,6 @@
             --accent-hover: #1f8ad2;
         }
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 0; background-color: var(--bg-dark); color: var(--text-light); height: 100vh; display: flex; overflow: hidden; }
-        
-        /* 🔒 LOGIN SCREEN STYLING */
         #loginOverlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: #090a10; z-index: 999999; display: flex; justify-content: center; align-items: center; }
         .login-box { background: #12131a; border: 1px solid #ff0055; padding: 40px; border-radius: 12px; width: 320px; box-shadow: 0 0 25px rgba(255, 0, 85, 0.15); text-align: center; }
         .login-box h2 { margin-top: 0; color: #ff0055; font-size: 18px; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 25px; }
@@ -24,10 +22,7 @@
         .login-btn { width: 100%; background: #ff0055; color: #fff; border: none; padding: 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px; transition: 0.2s; letter-spacing: 1px; }
         .login-btn:hover { background: #dd004b; box-shadow: 0 0 15px rgba(255, 0, 85, 0.4); }
         #loginError { color: #f87171; font-size: 12px; margin-top: 15px; display: none; font-weight: 500; }
-
-        /* 💻 MAIN DASHBOARD STYLING (Hidden by default until logged in) */
         #mainContent { display: none; width: 100vw; height: 100vh; }
-        
         .left-panel { width: 350px; background-color: var(--panel-bg); border-right: 1px solid var(--border-color); display: flex; flex-direction: column; padding: 15px; box-sizing: border-box; }
         h3 { margin-top: 0; color: #fff; font-size: 16px; border-bottom: 1px solid var(--border-color); padding-bottom: 10px; }
         .input-box { display: flex; flex-direction: column; gap: 8px; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 6px; margin-bottom: 15px; border: 1px solid var(--border-color); }
@@ -35,6 +30,7 @@
         textarea { height: 100px; resize: none; font-family: monospace; }
         .add-btn { background: var(--accent-blue); color: white; border: none; padding: 8px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 13px; }
         .add-btn:hover { background: var(--accent-hover); }
+        .add-btn:disabled { background: #555; cursor: not-allowed; }
         .grid-container { flex: 1; overflow-y: auto; display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; align-content: start; padding-right: 5px; }
         .grid-item { background: #2d2d2d; border: 1px solid var(--border-color); border-radius: 6px; padding: 12px; text-align: center; cursor: pointer; text-decoration: none; color: var(--text-light); font-size: 13px; font-weight: 500; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 6px; transition: all 0.2s; height: 70px; box-sizing: border-box; }
         .grid-item:hover { background: #37373d; border-color: var(--accent-blue); color: #fff; }
@@ -42,11 +38,11 @@
         .right-panel { flex: 1; background-color: #0d0e12; position: relative; }
         iframe { width: 100%; height: 100%; border: none; background: #0d0e12; }
         .counter { font-size: 11px; color: #888; text-align: right; margin-top: 8px; }
+        #loadingStatus { font-size: 12px; color: var(--accent-blue); text-align: center; margin-bottom: 10px; display: none; }
     </style>
 </head>
 <body>
 
-    <!-- 🔒 မျက်နှာပြင်ဝင်ပေါက် (Login Gate) -->
     <div id="loginOverlay">
         <div class="login-box">
             <h2>Secure Gateway</h2>
@@ -57,14 +53,14 @@
         </div>
     </div>
 
-    <!-- 💻 မူရင်း Dashboard ကြီး (Login အောင်မြင်မှ ပွင့်လာမည်) -->
-    <div id="mainContent" style="display:none;">
+    <div id="mainContent">
         <div class="left-panel">
-            <h3>⚡ AI Pages Grid Dashboard</h3>
+            <h3>⚡ AI Pages Cloud Dashboard</h3>
+            <div id="loadingStatus">☁️ Connecting Cloud...</div>
             <div class="input-box">
                 <input type="text" id="toolName" placeholder="Tool Name">
                 <textarea id="toolCode" placeholder="Paste Bookmarklet or HTML code here..."></textarea>
-                <button class="add-btn" onclick="saveTool()">Add to Grid</button>
+                <button class="add-btn" id="addBtn" onclick="saveTool()">Add to Cloud Grid</button>
             </div>
             <div class="grid-container" id="gridContainer"></div>
             <div class="counter" id="itemCount">Tools: 0 / 20</div>
@@ -75,126 +71,126 @@
     </div>
 
 <script>
-    /* 🔑 LOGIN VALIDATION SYSTEM WITH TWO ACCOUNT OPTIONS */
+    // 🔗 ဤနေရာတွင် အဆင့် (၁) ကရလာသော သင့် Google Web App URL ကို အစားထိုးထည့်ပါ
+    const SHEET_API_URL = "https://script.google.com/macros/s/AKfycbxnpwp09zAnG_clLRyFDrJ_m6Yom02Gt-AHY_PiX_n8ffVsi3Zrgx-8YkzaDlmBj0vo/exec"; 
+
+    let aiTools = [];
+
     function checkLogin() {
         const user = document.getElementById('usernameInput').value.trim();
         const pass = document.getElementById('passwordInput').value.trim();
         const errorEl = document.getElementById('loginError');
 
-        // 💡 ဤနေရာတွင် မိမိကြိုက်နှစ်သက်ရာ အကောင့်အတွဲ (၂) ခုကို ပြောင်းလဲသတ်မှတ်နိုင်ပါသည်
-        const account1 = { user: "admin", pass: "matrix123" };   // Account 1 (မိမိကိုယ်ပိုင်သုံး)
-        const account2 = { user: "guest", pass: "cyber789" };   // Account 2 (သူငယ်ချင်းပေးသုံး)
+        const account1 = { user: "admin", pass: "matrix123" };   
+        const account2 = { user: "guest", pass: "cyber789" };   
 
-        if ((user === account1.user && pass === account1.pass) || 
-            (user === account2.user && pass === account2.pass)) {
-            
-            // Login အောင်မြင်ပါက ပိတ်ထားသော Screen ကို ဖွင့်ပေးခြင်း
+        if ((user === account1.user && pass === account1.pass) || (user === account2.user && pass === account2.pass)) {
             document.getElementById('loginOverlay').style.display = 'none';
             document.getElementById('mainContent').style.display = 'flex';
-            renderGrid(); // Load Dashboard content
+            fetchToolsFromCloud(); // Login ဝင်ပြီးတာနဲ့ Cloud ပေါ်က Data လှမ်းဆွဲမည်
         } else {
             errorEl.style.display = 'block';
             document.getElementById('passwordInput').value = '';
         }
     }
 
-    // Enter ခလုတ်နှိပ်လျှင်လည်း Login ဝင်စေရန် စီမံခြင်း
     document.getElementById('passwordInput').addEventListener('keydown', function(e) {
         if (e.key === 'Enter') checkLogin();
     });
 
-    // ⌨️ GLOBAL INPUT FOCUS HOTKEY (Alt + S) - Mousepad မလိုဘဲ Type Box ထဲ Cursor ပြန်ဝင်စေမည့်စနစ်
-    window.addEventListener('keydown', function(e) {
-        if (e.altKey && e.key.toLowerCase() === 's') {
-            e.preventDefault(); 
-            const loginOverlay = document.getElementById('loginOverlay');
-            
-            if (loginOverlay && loginOverlay.style.display !== 'none') {
-                const usernameInput = document.getElementById('usernameInput');
-                if (usernameInput) usernameInput.focus();
-            } else {
-                const toolName = document.getElementById('toolName');
-                if (toolName) toolName.focus();
-            }
-        }
-    });
+    // ☁️ CLOUD DATABASE (GOOGLE SHEET) မှ DATA ဆွဲထုတ်သည့် FUNCTION
+    async function fetchToolsFromCloud() {
+        const statusEl = document.getElementById('loadingStatus');
+        statusEl.style.display = 'block';
+        statusEl.innerText = "☁️ Loading from Google Sheet...";
 
-    /* 💻 DASHBOARD ENGINE FUNCTIONALITIES */
-    let aiTools = JSON.parse(localStorage.getItem('aiGridTools')) || [];
+        try {
+            const response = await fetch(SHEET_API_URL);
+            aiTools = await response.json();
+            renderGrid();
+            statusEl.style.display = 'none';
+        } catch (error) {
+            console.error(error);
+            statusEl.innerText = "❌ Cloud Connection Failed!";
+        }
+    }
 
     function renderGrid() {
         const container = document.getElementById('gridContainer');
         if(!container) return;
         container.innerHTML = '';
+        
         aiTools.forEach((item, index) => {
             const box = document.createElement('div');
             box.className = 'grid-item';
             box.id = `item-${index}`;
             box.innerHTML = `💻 <span>${item.name}</span>`;
             box.onclick = function() { runBookmarklet(index); };
-            box.oncontextmenu = function(e) { e.preventDefault(); deleteTool(index); };
             container.appendChild(box);
         });
-        document.getElementById('itemCount').textContent = `Tools: ${aiTools.length} / 20`;
+        
+        document.getElementById('itemCount').innerText = `Tools: ${aiTools.length} / 20`;
+    }
+
+    // ☁️ GOOGLE SHEET ထဲသို့ DATA လှမ်းသိမ်းသည့် FUNCTION
+    async function saveTool() {
+        const nameInput = document.getElementById('toolName');
+        const codeInput = document.getElementById('toolCode');
+        const addBtn = document.getElementById('addBtn');
+        
+        const name = nameInput.value.trim();
+        const code = codeInput.value.trim();
+
+        if (!name || !code) {
+            alert('ကျေးဇူးပြု၍ အချက်အလက်အပြည့်အစုံဖြည့်ပါ။');
+            return;
+        }
+
+        addBtn.disabled = true;
+        addBtn.innerText = "Saving to Cloud...";
+
+        try {
+            // Google Sheet သို့ POST Request ပို့ခြင်း
+            await fetch(SHEET_API_URL, {
+                method: "POST",
+                mode: "no-cors", // Google App Script အတွက် လိုအပ်ပါသည်
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ name: name, code: code })
+            });
+
+            // ဒေတာသိမ်းပြီးပါက UI တွင် ချက်ချင်းပြသရန် Array ထဲထည့်ပြီး update လုပ်ခြင်း
+            aiTools.push({ name: name, code: code });
+            renderGrid();
+
+            nameInput.value = '';
+            codeInput.value = '';
+            alert('ဒေတာကို Google Sheet ထဲသို့ လုံခြုံစွာ သိမ်းဆည်းပြီးပါပြီ။');
+        } catch (error) {
+            console.error(error);
+            alert('Cloud ပေါ်သိမ်းဆည်းရက် အဆင်မပြေဖြစ်သွားပါသည်။');
+        } finally {
+            addBtn.disabled = false;
+            addBtn.innerText = "Add to Cloud Grid";
+        }
     }
 
     function runBookmarklet(index) {
+        const iframe = document.getElementById('outputFrame');
+        const tool = aiTools[index];
+        
         document.querySelectorAll('.grid-item').forEach(el => el.classList.remove('active'));
         document.getElementById(`item-${index}`).classList.add('active');
-        const iframe = document.getElementById('outputFrame');
-        let userCode = aiTools[index].code.trim();
-        iframe.src = "about:blank";
 
-        if (userCode.startsWith("javascript:")) {
-            userCode = userCode.replace(/^javascript:/, "");
-        }
-        try { userCode = decodeURIComponent(userCode); } catch(e) {}
-
-        setTimeout(() => {
-            const iframeDoc = iframe.contentWindow.document;
-            iframeDoc.open();
-            
-            const initialHTML = `
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <meta charset="UTF-8">
-                    <style>
-                        body { background: #0d0e12; color: #555; font-family: sans-serif; margin: 0; padding: 20px; height: 100vh; }
-                        #FIXED_CELL_ERASER_GRID_V9, [id^="FIXED_CELL"] { position: absolute !important; top: 20px !important; left: 50% !important; transform: translateX(-50%) !important; right: auto !important; z-index: 2147483647 !important; }
-                    </style>
-                </head>
-                <body></body>
-                </html>
-            `;
-            iframeDoc.write(initialHTML);
-            
-            const scriptElement = iframeDoc.createElement('script');
-            scriptElement.text = `try { ${userCode} } catch(err) { console.error(err); }`;
-            iframeDoc.body.appendChild(scriptElement);
-            iframeDoc.close();
-        }, 30);
-    }
-
-    function saveTool() {
-        const nameInput = document.getElementById('toolName');
-        const codeInput = document.getElementById('toolCode');
-        if (!nameInput.value.trim() || !codeInput.value.trim()) return;
-
-        aiTools.push({ name: nameInput.value.trim(), code: codeInput.value.trim() });
-        localStorage.setItem('aiGridTools', JSON.stringify(aiTools));
-        nameInput.value = ''; codeInput.value = '';
-        renderGrid();
-    }
-
-    function deleteTool(index) {
-        if (confirm(`ဖျက်မှာ သေချာပါသလား?`)) {
-            aiTools.splice(index, 1);
-            localStorage.setItem('aiGridTools', JSON.stringify(aiTools));
-            document.getElementById('outputFrame').src = 'about:blank';
-            renderGrid();
+        if (tool.code.startsWith('javascript:')) {
+            iframe.src = tool.code;
+        } else {
+            const doc = iframe.contentDocument || iframe.contentWindow.document;
+            doc.open();
+            doc.write(tool.code);
+            doc.close();
         }
     }
 </script>
+
 </body>
 </html>
